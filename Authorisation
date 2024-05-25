@@ -1,0 +1,147 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+
+namespace RoleBasedAuthorizationWithAttributes
+{
+    // Define User and Role classes
+    public class User
+    {
+        public string Username { get; set; }
+        public string Password { get; set; } // Simplified for example purposes
+        public List<string> Roles { get; set; } = new List<string>();
+    }
+
+    public class Role
+    {
+        public string RoleName { get; set; }
+    }
+
+    // User store with predefined users and roles
+    public static class UserStore
+    {
+        public static List<User> Users = new List<User>
+        {
+            new User { Username = "admin", Password = "admin", Roles = new List<string> { "Admin" } },
+            new User { Username = "editor", Password = "editor", Roles = new List<string> { "Editor" } },
+            new User { Username = "viewer", Password = "viewer", Roles = new List<string> { "Viewer" } }
+        };
+
+        public static User Authenticate(string username, string password)
+        {
+            return Users.FirstOrDefault(u => u.Username == username && u.Password == password);
+        }
+    }
+
+    // Define custom attribute for role-based access control
+    [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
+    sealed class RequiresRoleAttribute : Attribute
+    {
+        public string Role { get; }
+
+        public RequiresRoleAttribute(string role) => Role = role;
+    }
+
+    // CRUD Operations class with role-based attributes
+    public class CrudOperations
+    {
+        [RequiresRole("Admin")]
+        public void Create(User user)
+        {
+            Console.WriteLine("Create operation successful.");
+        }
+
+        [RequiresRole("Viewer")]
+        public void Read(User user)
+        {
+            Console.WriteLine("Read operation successful.");
+        }
+
+        [RequiresRole("Editor")]
+        public void Update(User user)
+        {
+            Console.WriteLine("Update operation successful.");
+        }
+
+        [RequiresRole("Admin")]
+        public void Delete(User user)
+        {
+            Console.WriteLine("Delete operation successful.");
+        }
+    }
+
+    // Authorization logic to check role attributes
+    public static class Authorization
+    {
+        public static bool HasRequiredRole(User user, MethodInfo method)
+        {
+            var attribute = method.GetCustomAttribute<RequiresRoleAttribute>();
+            if (attribute == null) return true; // No attribute means no restriction
+            return user.Roles.Contains(attribute.Role);
+        }
+    }
+
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Enter username:");
+            var username = Console.ReadLine();
+            Console.WriteLine("Enter password:");
+            var password = Console.ReadLine();
+
+            var user = UserStore.Authenticate(username, password);
+
+            if (user == null)
+            {
+                Console.WriteLine("Authentication failed. Exiting...");
+                return;
+            }
+
+            Console.WriteLine($"Welcome {user.Username}! Your roles: {string.Join(", ", user.Roles)}");
+
+            var operations = new CrudOperations();
+
+            while (true)
+            {
+                Console.WriteLine("\nSelect operation: 1-Create, 2-Read, 3-Update, 4-Delete, 5-Exit");
+                var choice = Console.ReadLine();
+
+                switch (choice)
+                {
+                    case "1":
+                        ExecuteOperation(operations, nameof(CrudOperations.Create), user);
+                        break;
+                    case "2":
+                        ExecuteOperation(operations, nameof(CrudOperations.Read), user);
+                        break;
+                    case "3":
+                        ExecuteOperation(operations, nameof(CrudOperations.Update), user);
+                        break;
+                    case "4":
+                        ExecuteOperation(operations, nameof(CrudOperations.Delete), user);
+                        break;
+                    case "5":
+                        return;
+                    default:
+                        Console.WriteLine("Invalid choice. Please try again.");
+                        break;
+                }
+            }
+        }
+
+        static void ExecuteOperation(object operations, string methodName, User user)
+        {
+            var method = operations.GetType().GetMethod(methodName);
+            if (method != null && Authorization.HasRequiredRole(user, method))
+            {
+                method.Invoke(operations, new object[] { user });
+            }
+            else
+            {
+                Console.WriteLine("Access denied. You do not have the required role for this operation.");
+            }
+        }
+    }
+}
